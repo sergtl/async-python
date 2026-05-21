@@ -1,53 +1,32 @@
 import asyncio
 import redis.asyncio as redis
 
-STREAM_KEY = "events"
-
-async def producer(r: redis.Redis):
-    for i in range(50):
-        event_id = await r.xadd(STREAM_KEY, {
-            "event_type": "test.event",
-            "number": str(i),
-        })
-
-        print(f"Produced: {event_id}")
-        await asyncio.sleep(1)
-
-async def consumer(r: redis.Redis):
-    last_id = "0-0"
-
-    while True:
-        response = await r.xread(
-            streams={STREAM_KEY: last_id},
-            count=1,
-            block=5000,
-        )
-
-        if not response:
-            print("No new messages")
-            continue
-
-        for stream_name, messages in response:
-            for message_id, fields in messages:
-                print(f"Consumed: {message_id} -> {fields}")
-                last_id = message_id
+from consumer import consumer_manager, create_group
+from producer import STREAM_KEY, producer
 
 async def main():
-    r = redis.Redis()
+    r = redis.Redis(decode_responses=True)
 
     await r.delete(STREAM_KEY)
 
-    producer_task = asyncio.create_task(producer(r))
-    consumer_task = asyncio.create_task(consumer(r))
+    # create consumer group
+    await create_group(r)
 
+    # start producer task
+    producer_task = asyncio.create_task(producer(r))
+
+    # start consumer manager task
+    consumer_manager_task = asyncio.create_task(consumer_manager(r))
+
+    # await producer
     await producer_task
 
     await asyncio.sleep(3)
 
-    consumer_task.cancel()
+    consumer_manager_task.cancel()
 
     try:
-        await consumer_task
+        await consumer_manager_task
     except asyncio.CancelledError:
         pass
 
