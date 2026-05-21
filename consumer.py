@@ -42,26 +42,11 @@ async def worker(r: redis.Redis, worker_name):
 
         if not response:
             print("No new messages")
-            # xack here?
             continue
         
         print("Response: ", response)
 
-async def consumer(r: redis.Redis):
-    last_id = "0-0"
-
-    while True:
-        response = await r.xread(
-            streams={STREAM_KEY: last_id},
-            count=10,
-            block=5000,
-        )
-
-        if not response:
-            print("No new messages")
-            continue
-
         for stream_name, messages in response:
             for message_id, fields in messages:
                 print(f"Consumed: {message_id} -> {fields}")
-                last_id = message_id
+                await r.xack(STREAM_KEY, CONSUMER_GROUP, message_id)
